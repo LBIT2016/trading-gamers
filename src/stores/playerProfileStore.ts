@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { PlayerProfile, PlayerRole } from '../types/playerProfile';
+// Import the user store directly from the location where it's defined
+import { useUserStore } from '../stores/userStore';
 
 /**
  * Interface defining the state structure for the player profile store.
@@ -20,6 +22,16 @@ interface PlayerProfileState {
    * @type {string | null}
    */
   error: string | null;
+  /**
+   * @description Indicates if the player is currently authenticated
+   * @type {boolean}
+   */
+  isAuthenticated: boolean;
+  /**
+   * @description Contains authentication session data
+   * @type {object | null}
+   */
+  session: { userId: string; timestamp: number } | null;
 }
 
 /**
@@ -50,6 +62,36 @@ interface PlayerProfileActions {
    * @param {string | null} error - The error message, or null to clear.
    */
   setError: (error: string | null) => void;
+  /**
+   * @description Logs in a user with username and password
+   * @param {string} username - The user's username
+   * @param {string} password - The user's password
+   * @returns {Promise<boolean>} - Success status of the login attempt
+   */
+  login: (username: string, password: string) => Promise<boolean>;
+  
+  /**
+   * @description Creates a new user account
+   * @param {string} username - The new user's username
+   * @param {string} password - The new user's password
+   * @returns {Promise<boolean>} - Success status of the signup attempt
+   */
+  signup: (username: string, password: string) => Promise<boolean>;
+  
+  /**
+   * @description Logs the current user out
+   */
+  logout: () => void;
+  
+  /**
+   * @description Checks for an existing user session
+   */
+  checkSession: () => void;
+  
+  /**
+   * @description Fetches the player profile using the active user ID
+   */
+  fetchProfileFromUser: () => void;
   // Potentially add async actions here later for fetching/saving profile data
   // e.g., fetchProfile: (playerId: string) => Promise<void>;
   // e.g., saveProfile: () => Promise<void>;
@@ -73,6 +115,8 @@ export const usePlayerProfileStore = create<PlayerProfileStore>((set, get) => ({
   profile: null,
   isLoading: false,
   error: null,
+  isAuthenticated: false,
+  session: null,
 
   // Action implementations
   setProfile: (profile) => set({ profile: profile, isLoading: false, error: null }),
@@ -83,22 +127,143 @@ export const usePlayerProfileStore = create<PlayerProfileStore>((set, get) => ({
       error: null, // Clear error on successful update attempt
     })),
 
-  clearProfile: () => set({ profile: null, isLoading: false, error: null }),
+  clearProfile: () => set({ profile: null, isLoading: false, error: null, isAuthenticated: false, session: null }),
 
   setLoading: (loading) => set({ isLoading: loading }),
 
   setError: (error) => set({ error: error, isLoading: false }),
 
-  // Example placeholder for an async fetch action (implementation would involve API calls)
-  // fetchProfile: async (playerId) => {
-  //   get().setLoading(true);
-  //   try {
-  //     // const fetchedProfile = await api.fetchPlayerProfile(playerId);
-  //     // get().setProfile(fetchedProfile);
-  //   } catch (err) {
-  //     // get().setError(err.message || 'Failed to fetch profile');
-  //   } finally {
-  //      // get().setLoading(false); // Ensure loading is turned off
-  //   }
-  // },
+  // Authentication methods that integrate with userStore
+  login: async (username, password) => {
+    get().setLoading(true);
+    try {
+      const success = await useUserStore.getState().login(username, password);
+      if (success) {
+        const session = JSON.parse(localStorage.getItem("user-session") || "null");
+        set({ 
+          isAuthenticated: true, 
+          session,
+          error: null
+        });
+        get().fetchProfileFromUser();
+        return true;
+      } else {
+        set({ 
+          error: useUserStore.getState().authError || "Login failed", 
+          isAuthenticated: false 
+        });
+        return false;
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Login failed";
+      set({ error: errorMessage, isAuthenticated: false });
+      return false;
+    } finally {
+      get().setLoading(false);
+    }
+  },
+
+  signup: async (username, password) => {
+    get().setLoading(true);
+    try {
+      const success = await useUserStore.getState().signup(username, password);
+      if (success) {
+        const session = JSON.parse(localStorage.getItem("user-session") || "null");
+        set({ 
+          isAuthenticated: true, 
+          session,
+          error: null
+        });
+        // Initialize a new player profile for the user
+        const userId = useUserStore.getState().activeProfileId;
+        if (userId) {
+          const newProfile: PlayerProfile = {
+            id: userId,
+            username,
+            displayName: username,
+            email: '',
+            role: PlayerRole.REGULAR,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
+          get().setProfile(newProfile);
+        }
+        return true;
+      } else {
+        set({ 
+          error: useUserStore.getState().authError || "Signup failed", 
+          isAuthenticated: false 
+        });
+        return false;
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Signup failed";
+      set({ error: errorMessage, isAuthenticated: false });
+      return false;
+    } finally {
+      get().setLoading(false);
+    }
+  },
+
+  logout: () => {
+    useUserStore.getState().logout();
+    get().clearProfile();
+  },
+
+  checkSession: () => {
+    const session = JSON.parse(localStorage.getItem("user-session") || "null");
+    if (session && session.userId) {
+      set({ 
+        isAuthenticated: true, 
+        session 
+      });
+      get().fetchProfileFromUser();
+    } else {
+      set({ 
+        isAuthenticated: false, 
+        session: null 
+      });
+    }
+  },
+
+  fetchProfileFromUser: () => {
+    get().setLoading(true);
+    try {
+      const userState = useUserStore.getState();
+      const userId = userState.activeProfileId;
+      
+      if (!userId) {
+        get().setError("No active user found");
+        return;
+      }
+      
+      const userProfile = userState.profiles.find(p => p.id === userId);
+      if (!userProfile) {
+        get().setError("User profile not found");
+        return;
+      }
+      
+      // Map user profile data to player profile
+      const playerProfile: PlayerProfile = {
+        id: userProfile.id,
+        username: userProfile.name,
+        displayName: userProfile.name,
+        email: '',
+        role: userProfile.isAdmin ? PlayerRole.ADMIN : PlayerRole.REGULAR,
+        createdAt: new Date(userProfile.createdAt),
+        updatedAt: new Date(),
+        // Map other fields as needed
+        genres: userProfile.genres,
+        games: userProfile.games,
+        playerType: userProfile.playerType
+      };
+      
+      get().setProfile(playerProfile);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to fetch profile";
+      get().setError(errorMessage);
+    } finally {
+      get().setLoading(false);
+    }
+  }
 }));
