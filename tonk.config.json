@@ -1,0 +1,7 @@
+{
+  "name": "trading-gamers",
+  "plan": {
+    "description": "This project is about gamers to trade their games and game related items. It is really a marketplace for them to buy or sell goods or services. "
+  },
+  "template": "react"
+}
