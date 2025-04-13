@@ -10,6 +10,7 @@ export interface UserProfile {
   games?: string[];
   playerType?: string;
   isAdmin?: boolean;  // Added admin flag
+  roles?: string[];   // Add roles for marketplace
 }
 
 interface UserState {
@@ -24,6 +25,9 @@ interface UserState {
   signup: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   checkSession: () => void;
+  
+  // Helper to get current user
+  getCurrentUser: () => UserProfile | null;
   
   // Legacy function for backward compatibility
   createProfile: (name: string) => UserProfile;
@@ -78,6 +82,13 @@ export const useUserStore = create<UserState>(
       viewingProfileId: null,
       authError: null,
       isLoading: true,
+      
+      // Get current user helper
+      getCurrentUser: () => {
+        const { profiles, activeProfileId } = get();
+        if (!activeProfileId) return null;
+        return profiles.find(p => p.id === activeProfileId) || null;
+      },
 
       // Check for existing session on initialization
       checkSession: () => {
@@ -139,7 +150,7 @@ export const useUserStore = create<UserState>(
       
       // Login with username and password
       login: async (username, password) => {
-        set({ authError: null });
+        set({ authError: null, isLoading: true });
         try {
           // Find the user with matching username
           const normalizedUsername = username.trim().toLowerCase();
@@ -148,28 +159,35 @@ export const useUserStore = create<UserState>(
           );
           
           if (!user) {
-            set({ authError: "User not found" });
+            set({ authError: "User not found", isLoading: false });
             return false;
           }
           
-          // For now, use simple comparison
+          // Check if the user has a password hash
+          if (!user.passwordHash) {
+            set({ authError: "Account authentication error", isLoading: false });
+            return false;
+          }
+          
+          // For now, use simple comparison - in a real app, you'd use a proper password verification
           const isMatch = user.passwordHash === password;
           if (!isMatch) {
-            set({ authError: "Invalid password" });
+            set({ authError: "Invalid password", isLoading: false });
             return false;
           }
           
           // Set active profile and save to localStorage
-          set({ activeProfileId: user.id });
+          set({ activeProfileId: user.id, isLoading: false });
           localStorage.setItem("user-session", JSON.stringify({ 
             userId: user.id,
             timestamp: Date.now()
           }));
           
+          console.log("Login successful:", user);
           return true;
         } catch (error) {
           console.error("Login error:", error);
-          set({ authError: "Login failed" });
+          set({ authError: "Login failed", isLoading: false });
           return false;
         }
       },
@@ -229,6 +247,7 @@ export const useUserStore = create<UserState>(
           authError: null
         });
         
+        console.log("User logged out");
         // Reset location viewing state if needed
         locationStore.resetViewingState();
       },
@@ -336,7 +355,7 @@ export const useUserStore = create<UserState>(
         // Check for existing session after data is loaded
         store.checkSession();
         // Create admin account if it doesn't exist
-        store.onLoad();
+        if (store.onLoad) store.onLoad();
       },
       onInitError: (error) => {
         console.error("User sync initialization error:", error);

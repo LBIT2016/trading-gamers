@@ -5,6 +5,10 @@ import React from 'react';
  */
 export interface ItemCardProps {
   /**
+   * Unique ID for the item
+   */
+  itemId: string;
+  /**
    * Title of the item
    */
   title: string;
@@ -41,6 +45,7 @@ export interface ItemCardProps {
  * @returns A card displaying item details with image
  */
 export const ItemCard: React.FC<ItemCardProps> = ({
+  itemId,
   title,
   price,
   imageUrl,
@@ -53,6 +58,7 @@ export const ItemCard: React.FC<ItemCardProps> = ({
     <div 
       className="border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
       onClick={onClick}
+      data-item-id={itemId}
     >
       <div className="h-48 overflow-hidden">
         <img 

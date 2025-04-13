@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { usePlayerProfileStore } from '../../stores/playerProfileStore';
+import React, { useState, useEffect } from 'react';
+import { useUserStore } from '../../stores/userStore';
 import { PlayerRole } from '../../types/playerProfile';
 
 /**
@@ -22,87 +22,86 @@ export const AuthSidebar: React.FC<AuthSidebarProps> = ({ className = '' }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
+  const [localError, setLocalError] = useState('');
+  const [localLoading, setLocalLoading] = useState(false);
   
-  // Get store actions for authentication
-  const { setProfile, setLoading, setError } = usePlayerProfileStore();
+  // Use the userStore login/signup methods
+  const { login, signup, error, isLoading, user } = useUserStore();
+
+  // Reset local loading state when userStore's loading state changes
+  useEffect(() => {
+    if (!isLoading && localLoading) {
+      setLocalLoading(false);
+    }
+  }, [isLoading]);
+  
+  // Check if user has been authenticated
+  useEffect(() => {
+    if (user) {
+      // Reset form state when successfully logged in
+      setLocalLoading(false);
+      setLocalError('');
+    }
+  }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage('');
+    setLocalError('');
+    setLocalLoading(true);
+    
+    if (!username || !password) {
+      setLocalError('Username and password are required');
+      setLocalLoading(false);
+      return;
+    }
     
     try {
+      let success;
+      
       if (isLogin) {
-        // Handle login
-        // In a real implementation, this would call an API
-        console.log('Login attempt', { username, password });
-        
-        // Mock successful login (replace with actual API call)
-        setLoading(true);
-        // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Create mock profile (in real app, this would come from API)
-        const mockProfile = {
-          player_id: '12345',
-          username: username,
-          email: `${username}@example.com`, // Generate mock email
-          passwordHash: 'hashed_password_would_not_be_returned',
-          roles: [PlayerRole.BUYER],
-          createdAt: new Date(),
-          updatedAt: new Date()
-        };
-        
-        setProfile(mockProfile);
-        setLoading(false);
+        console.log('Attempting login with:', username);
+        success = await login(username, password);
       } else {
-        // Handle signup
-        if (!username || !password) {
-          setErrorMessage('Username and password are required');
-          return;
-        }
-        
+        // Password validation
         if (password.length < 6) {
-          setErrorMessage('Password must be at least 6 characters');
+          setLocalError('Password must be at least 6 characters');
+          setLocalLoading(false);
           return;
         }
         
-        console.log('Signup attempt', { username, password });
-        
-        // Mock successful signup (replace with actual API call)
-        setLoading(true);
-        // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Create mock profile (in real app, this would come from API)
-        const mockProfile = {
-          player_id: '12345',
-          username: username,
-          email: `${username}@example.com`, // Generate mock email
-          passwordHash: 'hashed_password_would_not_be_returned',
-          roles: [PlayerRole.BUYER],
-          createdAt: new Date(),
-          updatedAt: new Date()
-        };
-        
-        setProfile(mockProfile);
-        setLoading(false);
+        console.log('Attempting signup with:', username);
+        success = await signup(username, password);
       }
+      
+      console.log('Authentication result:', success);
+      
+      if (!success) {
+        // If login/signup failed but no error was set in the store
+        setLocalError(error || `${isLogin ? 'Login' : 'Signup'} failed. Please try again.`);
+      }
+      
+      // Always reset loading after authentication attempt
+      setLocalLoading(false);
     } catch (error) {
       console.error('Authentication error:', error);
-      setErrorMessage('Authentication failed. Please try again.');
-      setError('Authentication failed');
-      setLoading(false);
+      setLocalError('Authentication failed. Please try again.');
+      setLocalLoading(false);
     }
+    
+    // Fallback timeout to prevent stuck loading state
+    setTimeout(() => {
+      setLocalLoading(false);
+    }, 3000);
   };
 
   return (
     <aside className={`w-64 h-screen bg-gray-50 p-4 ${className}`}>
       <h2 className="text-xl font-semibold mb-6">{isLogin ? 'Login' : 'Sign Up'}</h2>
       
-      {errorMessage && (
+      {/* Enhanced error display */}
+      {(localError || error) && (
         <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 mb-4 rounded">
-          <p>{errorMessage}</p>
+          <p>{localError || error}</p>
         </div>
       )}
       
@@ -138,8 +137,9 @@ export const AuthSidebar: React.FC<AuthSidebarProps> = ({ className = '' }) => {
         <button
           type="submit"
           className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          disabled={localLoading}
         >
-          {isLogin ? 'Login' : 'Sign Up'}
+          {localLoading ? 'Processing...' : (isLogin ? 'Login' : 'Sign Up')}
         </button>
       </form>
       

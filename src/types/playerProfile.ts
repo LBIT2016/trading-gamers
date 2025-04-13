@@ -7,6 +7,7 @@ export enum PlayerRole {
   SELLER = 'seller',
   SERVICE_PROVIDER = 'service_provider',
   ADMIN = 'admin', // Example of an additional role
+  REGULAR = 'regular', // Default role for most users
 }
 
 /**
